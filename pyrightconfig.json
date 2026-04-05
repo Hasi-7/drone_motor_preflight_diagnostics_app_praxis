@@ -1,0 +1,12 @@
+{
+  "include": ["analysis"],
+  "exclude": ["analysis/tests"],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "reportMissingModuleSource": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownParameterType": false,
+  "reportMissingTypeStubs": false
+}

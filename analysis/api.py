@@ -34,13 +34,13 @@ Examples
 import argparse
 import json
 import sys
-from pathlib import Path
 
 from .baseline import average_baselines, load_baseline, save_baseline, save_baseline_profile
 from .config import MotorConfig
 from .models import BaselineData
 from .pipeline import DiagnosticPipeline, PipelineInput
 from .preprocessing import load_segment
+from .recording import list_input_devices, record_wav
 from .spectral import compute_welch_psd
 
 
@@ -80,6 +80,22 @@ def cmd_analyze(args: argparse.Namespace) -> None:
         "artifacts": state.artifacts.to_dict() if state.artifacts else None,
     }
     print(json.dumps(output))
+
+
+def cmd_list_devices(args: argparse.Namespace) -> None:  # noqa: ARG001
+    devices = list_input_devices()
+    print(json.dumps({"status": "ok", "devices": devices}))
+
+
+def cmd_record(args: argparse.Namespace) -> None:
+    out_path = record_wav(
+        out_path=args.out,
+        duration=args.duration,
+        device=args.device if args.device is not None else None,
+        sample_rate=args.sample_rate,
+        channels=args.channels,
+    )
+    print(json.dumps({"status": "ok", "path": str(out_path)}))
 
 
 def cmd_baseline_gen(args: argparse.Namespace) -> None:
@@ -140,6 +156,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_gen.add_argument("--start", type=float, default=2.0)
     p_gen.add_argument("--end", type=float, default=8.0)
 
+    # ── list-devices ───────────────────────────────────────────────────────
+    sub.add_parser("list-devices", help="List available audio input devices")
+
+    # ── record ─────────────────────────────────────────────────────────────
+    p_record = sub.add_parser("record", help="Record audio from microphone to WAV")
+    p_record.add_argument("--out", required=True, help="Output WAV path")
+    p_record.add_argument("--duration", type=float, required=True, help="Recording duration (s)")
+    p_record.add_argument("--device", type=int, default=None, help="Device index (default: system default)")
+    p_record.add_argument("--sample-rate", type=int, default=44100, help="Sample rate Hz")
+    p_record.add_argument("--channels", type=int, default=1, help="Input channels")
+
     # ── baseline-avg ───────────────────────────────────────────────────────
     p_avg = sub.add_parser("baseline-avg", help="Average multiple baselines into a profile")
     p_avg.add_argument("--npz", nargs="+", required=True, help="Input .npz files")
@@ -161,6 +188,10 @@ def main() -> None:
             cmd_baseline_gen(args)
         elif args.command == "baseline-avg":
             cmd_baseline_avg(args)
+        elif args.command == "list-devices":
+            cmd_list_devices(args)
+        elif args.command == "record":
+            cmd_record(args)
     except Exception as exc:
         print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
         sys.exit(1)

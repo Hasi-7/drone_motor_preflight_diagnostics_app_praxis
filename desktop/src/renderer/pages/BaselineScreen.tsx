@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { DroneProfile, ThrottlePreset } from "../../shared/types";
+import type { AudioDevice } from "../../shared/preload-api";
 
 const REQUIRED_CAPTURES = 5;
 
@@ -14,10 +15,12 @@ export function BaselineScreen() {
   const [droneProfiles, setDroneProfiles] = useState<DroneProfile[]>([]);
   const [presets, setPresets] = useState<ThrottlePreset[]>([]);
   const [serialPorts, setSerialPorts] = useState<{ path: string }[]>([]);
+  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
 
   const [selectedDroneId, setSelectedDroneId] = useState("");
   const [selectedPresetId, setSelectedPresetId] = useState<number | "">("");
   const [selectedPort, setSelectedPort] = useState("");
+  const [selectedDeviceIndex, setSelectedDeviceIndex] = useState<number | "">("");
 
   const [captures, setCaptures] = useState<CaptureRun[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
@@ -33,6 +36,7 @@ export function BaselineScreen() {
     window.api.getDroneProfiles().then(setDroneProfiles);
     window.api.getThrottlePresets().then(setPresets);
     window.api.listSerialPorts().then(setSerialPorts);
+    window.api.listAudioDevices().then(setAudioDevices);
   }, []);
 
   const preset = presets.find((p) => p.id === selectedPresetId);
@@ -72,6 +76,12 @@ export function BaselineScreen() {
 
     const npzPaths: string[] = [];
 
+    // Recording duration = motor run + 2s trim buffer (1s each side)
+    const motorDurationS = preset.duration_ms / 1000;
+    const recordDurationS = motorDurationS + 2.0;
+    const trimStartS = 1.0;
+    const trimEndS = motorDurationS + 1.0;
+
     try {
       // Connect
       addLog("Connecting to flight controller...");
@@ -84,28 +94,32 @@ export function BaselineScreen() {
 
       for (let i = 0; i < REQUIRED_CAPTURES; i++) {
         updateCapture(i, { status: "running" });
-        addLog(`Capture ${i + 1}/${REQUIRED_CAPTURES}...`);
+        addLog(`Capture ${i + 1}/${REQUIRED_CAPTURES} — recording ${recordDurationS}s...`);
 
-        // TODO: integrate audio recording — for now we placeholder with a dummy wav path
-        // The real flow would: start audio recording → run motor → stop recording → save WAV
-        const dummyWavPath = `app-data/baselines/${selectedDroneId}/${selectedPresetId}/capture_${i}.wav`;
+        const wavPath = `app-data/baselines/${selectedDroneId}/${selectedPresetId}/capture_${i}.wav`;
         const outPath = `app-data/baselines/${selectedDroneId}/${selectedPresetId}/run${i}.npz`;
 
-        // Run motor
-        const motorResult = await window.api.runMotor({
-          motorIndex: 0, // baseline always uses motor 0 as reference
-          throttleValue: preset.throttle_value,
-          durationMs: preset.duration_ms,
-        });
+        // Record audio and run motor concurrently
+        const deviceIndex = selectedDeviceIndex !== "" ? selectedDeviceIndex : undefined;
+        const [motorResult, recordResult] = await Promise.all([
+          window.api.runMotor({
+            motorIndex: 0, // baseline uses motor 0 as reference
+            throttleValue: preset.throttle_value,
+            durationMs: preset.duration_ms,
+          }),
+          window.api.recordAudio({ outPath: wavPath, duration: recordDurationS, deviceIndex }),
+        ]);
 
         if (!motorResult.success) {
           updateCapture(i, { status: "error", error: motorResult.error });
-          addLog(`Capture ${i + 1} failed: ${motorResult.error}`);
+          addLog(`Capture ${i + 1} motor error: ${motorResult.error}`);
           continue;
         }
 
+        addLog(`Recorded → ${recordResult.path}`);
+
         // Generate baseline npz from the recording
-        const genResult = await window.api.generateBaseline(dummyWavPath, outPath, 2.0, 8.0);
+        const genResult = await window.api.generateBaseline(recordResult.path, outPath, trimStartS, trimEndS);
         if (genResult.status === "ok") {
           npzPaths.push(genResult.path);
           updateCapture(i, { status: "done", npzPath: genResult.path });
@@ -130,12 +144,11 @@ export function BaselineScreen() {
     }
 
     // Average captures that succeeded
-    const successfulPaths = npzPaths;
-    if (successfulPaths.length >= 3) {
+    if (npzPaths.length >= 3) {
       setIsAveraging(true);
-      addLog(`Averaging ${successfulPaths.length} captures into baseline...`);
+      addLog(`Averaging ${npzPaths.length} captures into baseline...`);
       const avgResult = await window.api.averageBaselines(
-        successfulPaths,
+        npzPaths,
         selectedDroneId,
         String(selectedPresetId),
       );
@@ -214,6 +227,17 @@ export function BaselineScreen() {
                 <option value="">— Select port —</option>
                 {serialPorts.map((p) => (
                   <option key={p.path} value={p.path}>{p.path}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Microphone</label>
+              <select className="form-select" value={selectedDeviceIndex}
+                onChange={(e) => setSelectedDeviceIndex(Number(e.target.value) || "")} disabled={isCapturing}>
+                <option value="">— System default —</option>
+                {audioDevices.map((d) => (
+                  <option key={d.index} value={d.index}>{d.name}</option>
                 ))}
               </select>
             </div>

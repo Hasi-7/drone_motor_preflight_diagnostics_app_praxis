@@ -6,7 +6,6 @@ Behavioral parity with sound_final_design_2.py::load_segment.
 from pathlib import Path
 
 import librosa
-import numpy as np
 
 from .models import PreprocessedData
 
@@ -32,7 +31,8 @@ def load_segment(
     if not file_path.exists():
         raise FileNotFoundError(f"Audio file not found: {file_path}")
 
-    samples, sr = librosa.load(str(file_path), sr=None)
+    samples, sr_raw = librosa.load(str(file_path), sr=None)
+    sr: int = int(sr_raw)  # librosa stubs type sr as int|float; cast to int
     start_idx = int(start * sr)
     end_idx = int(end * sr)
     segment = samples[start_idx:end_idx]

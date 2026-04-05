@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / Electron
+node_modules/
+dist/
+release/
+out/
+
+# App/runtime data
+app-data/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local Claude config
+.claude/settings.local.json

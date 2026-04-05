@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
 import { DatabaseService } from "./services/database";
+import { SettingsService } from "./services/settings";
 import { SidecarService } from "./services/sidecar";
 import { SyncService } from "./services/sync";
 import { registerAnalysisHandlers } from "./ipc/analysis";
@@ -10,6 +11,7 @@ const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
 let mainWindow: BrowserWindow | null = null;
 let db: DatabaseService;
+let settings: SettingsService;
 let sidecar: SidecarService;
 let syncService: SyncService;
 
@@ -67,6 +69,8 @@ async function initServices(): Promise<void> {
   db = new DatabaseService(path.join(appDataDir, "db", "diagnostics.sqlite"));
   await db.initialize();
 
+  settings = new SettingsService(appDataDir);
+
   sidecar = new SidecarService(sidecarDir, appDataDir);
 
   syncService = new SyncService(db);
@@ -74,6 +78,12 @@ async function initServices(): Promise<void> {
   // Register IPC handlers
   registerAnalysisHandlers(ipcMain, sidecar, db, appDataDir);
   registerBetaflightHandlers(ipcMain);
+
+  // Settings IPC
+  ipcMain.handle("settings:get", () => settings.get());
+  ipcMain.handle("settings:save", (_e, partial: Parameters<SettingsService["save"]>[0]) =>
+    settings.save(partial),
+  );
 
   // Start background sync if enabled
   syncService.startBackgroundSync();

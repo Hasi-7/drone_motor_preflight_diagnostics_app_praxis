@@ -17,8 +17,9 @@ import type {
   ThrottlePreset,
   BaselineProfile,
 } from "../shared/types";
+import type { AppApi, AudioDevice } from "../shared/preload-api";
 
-const api = {
+const api: AppApi = {
   // ── Analysis / sidecar ────────────────────────────────────────────────
   analyze: (req: SidecarAnalyzeRequest): Promise<SidecarAnalyzeResponse> =>
     ipcRenderer.invoke("analysis:analyze", req),
@@ -28,6 +29,13 @@ const api = {
 
   averageBaselines: (npzPaths: string[], droneId: string, throttlePreset: string): Promise<{ status: string; path: string; captureCount: number }> =>
     ipcRenderer.invoke("analysis:baseline-avg", { npzPaths, droneId, throttlePreset }),
+
+  // ── Audio recording ───────────────────────────────────────────────────
+  listAudioDevices: (): Promise<AudioDevice[]> =>
+    ipcRenderer.invoke("audio:list-devices"),
+
+  recordAudio: (args: { outPath: string; duration: number; deviceIndex?: number }): Promise<{ path: string }> =>
+    ipcRenderer.invoke("audio:record", args),
 
   // ── Betaflight serial ─────────────────────────────────────────────────
   listSerialPorts: (): Promise<{ path: string; manufacturer?: string }[]> =>
@@ -107,8 +115,6 @@ const api = {
     ipcRenderer.on("sync:status-change", handler);
     return () => ipcRenderer.removeListener("sync:status-change", handler);
   },
-} as const;
+};
 
 contextBridge.exposeInMainWorld("api", api);
-
-export type AppApi = typeof api;

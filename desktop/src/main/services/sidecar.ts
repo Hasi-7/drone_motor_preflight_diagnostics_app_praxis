@@ -47,6 +47,14 @@ export interface SidecarBaselineAvgArgs {
   baselinesDir: string;
 }
 
+export interface SidecarRecordArgs {
+  outPath: string;
+  duration: number;
+  deviceIndex?: number;
+  sampleRate?: number;
+  channels?: number;
+}
+
 export class SidecarService {
   private readonly sidecarDir: string;
   private readonly appDataDir: string;
@@ -113,6 +121,22 @@ export class SidecarService {
     return this.runSidecar(cliArgs);
   }
 
+  // ── Audio device listing ──────────────────────────────────────────────
+
+  async listDevices(): Promise<unknown> {
+    return this.runSidecar(["list-devices"]);
+  }
+
+  // ── Audio recording ───────────────────────────────────────────────────
+
+  async recordAudio(args: SidecarRecordArgs): Promise<unknown> {
+    const cliArgs = ["record", "--out", args.outPath, "--duration", String(args.duration)];
+    if (args.deviceIndex !== undefined) cliArgs.push("--device", String(args.deviceIndex));
+    if (args.sampleRate !== undefined) cliArgs.push("--sample-rate", String(args.sampleRate));
+    if (args.channels !== undefined) cliArgs.push("--channels", String(args.channels));
+    return this.runSidecar(cliArgs);
+  }
+
   // ── Internal: spawn and collect stdout ───────────────────────────────
 
   private async runSidecar(args: string[]): Promise<unknown> {
@@ -167,8 +191,7 @@ export class SidecarService {
       return { executable: exePath, moduleArgs: cliArgs };
     }
 
-    // Development fallback: python -m analysis.api
-    const repoRoot = path.resolve(this.sidecarDir, "..", "..");
+    // Development fallback: python -m analysis.api from repo root
     return {
       executable: "python",
       moduleArgs: ["-m", "analysis.api", ...cliArgs],

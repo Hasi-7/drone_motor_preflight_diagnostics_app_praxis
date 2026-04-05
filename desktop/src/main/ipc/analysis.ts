@@ -3,9 +3,11 @@
  */
 import fs from "fs";
 import path from "path";
+import { dialog } from "electron";
 import type { IpcMain } from "electron";
 import type { DatabaseService } from "../services/database";
 import type { SidecarService } from "../services/sidecar";
+import type { AudioDevice } from "../../shared/preload-api";
 import type {
   DiagnosticStatus,
   RunArtifacts,
@@ -109,6 +111,25 @@ export function registerAnalysisHandlers(
   ipcMain.handle("db:get-diagnostic-run", (_e, args) =>
     db.getDiagnosticRun(args.testId));
 
+  // ── Audio recording ────────────────────────────────────────────────────────
+  ipcMain.handle("audio:list-devices", async () => {
+    const result = await sidecar.listDevices() as { status: string; devices: AudioDevice[] };
+    return result.devices ?? [];
+  });
+
+  ipcMain.handle("audio:record", async (_e, args: {
+    outPath: string;
+    duration: number;
+    deviceIndex?: number;
+  }) => {
+    const result = await sidecar.recordAudio({
+      outPath: args.outPath,
+      duration: args.duration,
+      deviceIndex: args.deviceIndex,
+    }) as { status: string; path: string };
+    return { path: result.path };
+  });
+
   // ── Filesystem helpers ────────────────────────────────────────────────────
   ipcMain.handle("fs:read-image-data-url", (_e, { filePath }: { filePath: string }) => {
     if (!fs.existsSync(filePath)) return null;
@@ -116,5 +137,10 @@ export function registerAnalysisHandlers(
     const mime = ext === ".png" ? "image/png" : "image/jpeg";
     const b64 = fs.readFileSync(filePath).toString("base64");
     return `data:${mime};base64,${b64}`;
+  });
+
+  ipcMain.handle("fs:show-save-dialog", async (_e, { defaultPath }: { defaultPath?: string }) => {
+    const result = await dialog.showSaveDialog({ defaultPath });
+    return result.canceled ? undefined : result.filePath;
   });
 }

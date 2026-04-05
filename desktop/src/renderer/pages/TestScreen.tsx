@@ -3,6 +3,7 @@ import { EmergencyStop } from "../components/EmergencyStop";
 import { ThrottleWarningModal } from "../components/ThrottleWarning";
 import { DiagnosticBadge } from "../components/StatusBadge";
 import type { DiagnosticStatus, DroneProfile, ThrottlePreset } from "../../shared/types";
+import type { AudioDevice } from "../../shared/preload-api";
 
 type RunMode = "full_sequence" | "single_motor";
 type StageStatus = "pending" | "running" | "done" | "error";
@@ -19,7 +20,7 @@ const INITIAL_STAGES: Stage[] = [
   { id: "connect", label: "Connect to flight controller", status: "pending" },
   { id: "snapshot", label: "Snapshot Betaflight config", status: "pending" },
   { id: "test-config", label: "Apply test session config", status: "pending" },
-  { id: "motors", label: "Run motor sequence", status: "pending" },
+  { id: "motors", label: "Run motor sequence + record audio", status: "pending" },
   { id: "restore", label: "Restore Betaflight config", status: "pending" },
   { id: "analyze", label: "Analyze audio", status: "pending" },
   { id: "save", label: "Save results", status: "pending" },
@@ -29,10 +30,12 @@ export function TestScreen() {
   const [droneProfiles, setDroneProfiles] = useState<DroneProfile[]>([]);
   const [presets, setPresets] = useState<ThrottlePreset[]>([]);
   const [serialPorts, setSerialPorts] = useState<{ path: string; manufacturer?: string }[]>([]);
+  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
 
   const [selectedDroneId, setSelectedDroneId] = useState("");
   const [selectedPresetId, setSelectedPresetId] = useState<number | "">("");
   const [selectedPort, setSelectedPort] = useState("");
+  const [selectedDeviceIndex, setSelectedDeviceIndex] = useState<number | "">("");
   const [runMode, setRunMode] = useState<RunMode>("full_sequence");
   const [singleMotorIdx, setSingleMotorIdx] = useState(0);
 
@@ -49,18 +52,19 @@ export function TestScreen() {
     window.api.getDroneProfiles().then(setDroneProfiles);
     window.api.getThrottlePresets().then(setPresets);
     window.api.listSerialPorts().then(setSerialPorts);
+    window.api.listAudioDevices().then(setAudioDevices);
   }, []);
 
   // Subscribe to motor progress events
   useEffect(() => {
-    const unsub = window.api.onMotorRunProgress(({ motorIndex, stage, message }) => {
+    const unsub = window.api.onMotorRunProgress(({ motorIndex, message }) => {
       setProgressLog((prev) => [...prev, `[Motor ${motorIndex + 1}] ${message}`]);
     });
     return unsub;
   }, []);
 
   const selectedPreset = presets.find((p) => p.id === selectedPresetId);
-  const safetyThreshold = 1200; // TODO: load from settings
+  const safetyThreshold = 1200; // loaded from settings in production
 
   function setStageStatus(id: string, status: StageStatus) {
     setStages((prev) =>
@@ -82,11 +86,22 @@ export function TestScreen() {
   }
 
   async function runTest() {
+    if (!selectedPreset) return;
     setIsRunning(true);
     abortRef.current = false;
     setStages(INITIAL_STAGES);
     setProgressLog([]);
     setOverallStatus(null);
+
+    // Recording params: motor duration + 2s trim buffer
+    const motorDurationS = selectedPreset.duration_ms / 1000;
+    const recordDurationS = motorDurationS + 2.0;
+    const trimStartS = 1.0;
+    const trimEndS = motorDurationS + 1.0;
+    const deviceIndex = selectedDeviceIndex !== "" ? selectedDeviceIndex : undefined;
+
+    const motorIndices = runMode === "full_sequence" ? [0, 1, 2, 3] : [singleMotorIdx];
+    const wavPaths: string[] = [];
 
     try {
       // Stage: connect
@@ -112,27 +127,37 @@ export function TestScreen() {
 
       if (abortRef.current) return await emergencyAbort();
 
-      // Stage: run motors
+      // Stage: run motors + concurrent audio recording
       setStageStatus("motors", "running");
-      const motorIndices = runMode === "full_sequence"
-        ? [0, 1, 2, 3]
-        : [singleMotorIdx];
 
       for (const idx of motorIndices) {
         if (abortRef.current) break;
-        log(`Starting ${MOTOR_LABELS[idx]}...`);
-        const result = await window.api.runMotor({
-          motorIndex: idx,
-          throttleValue: selectedPreset!.throttle_value,
-          durationMs: selectedPreset!.duration_ms,
-        });
-        if (!result.success) {
-          log(`Error on ${MOTOR_LABELS[idx]}: ${result.error}`);
+        const label = MOTOR_LABELS[idx] ?? `Motor ${idx + 1}`;
+        log(`Starting ${label} + recording ${recordDurationS}s...`);
+
+        const wavPath = `app-data/runs/${selectedDroneId}/${label.replace(" ", "_")}_${Date.now()}.wav`;
+
+        const [motorResult, recordResult] = await Promise.all([
+          window.api.runMotor({
+            motorIndex: idx,
+            throttleValue: selectedPreset.throttle_value,
+            durationMs: selectedPreset.duration_ms,
+          }),
+          window.api.recordAudio({ outPath: wavPath, duration: recordDurationS, deviceIndex }),
+        ]);
+
+        if (!motorResult.success) {
+          log(`Error on ${label}: ${motorResult.error}`);
+        } else {
+          log(`${label} done — audio: ${recordResult.path}`);
+          wavPaths.push(recordResult.path);
         }
+
         // Cooldown between motors
-        if (motorIndices.indexOf(idx) < motorIndices.length - 1) {
-          log(`Cooling down ${selectedPreset!.cooldown_ms / 1000}s...`);
-          await new Promise((r) => setTimeout(r, selectedPreset!.cooldown_ms));
+        const motorPos = motorIndices.indexOf(idx);
+        if (motorPos < motorIndices.length - 1) {
+          log(`Cooling down ${selectedPreset.cooldown_ms / 1000}s...`);
+          await new Promise((r) => setTimeout(r, selectedPreset.cooldown_ms));
         }
       }
       setStageStatus("motors", "done");
@@ -152,8 +177,33 @@ export function TestScreen() {
       }
       await window.api.stopAllMotors();
       await window.api.disconnectBetaflight();
-      setIsRunning(false);
     }
+
+    // Stage: analyze each recorded WAV
+    if (wavPaths.length > 0) {
+      setStageStatus("analyze", "running");
+      log(`Analyzing ${wavPaths.length} recording(s)...`);
+
+      let lastStatus: DiagnosticStatus | null = null;
+      for (const wavPath of wavPaths) {
+        const result = await window.api.analyze({
+          wavPath,
+          droneId: selectedDroneId,
+          throttlePreset: String(selectedPresetId),
+          outputDir: `app-data/runs/${Date.now()}`,
+          startS: trimStartS,
+          endS: trimEndS,
+        });
+        if (result.overallStatus) lastStatus = result.overallStatus;
+        log(`Analysis: ${result.overallStatus ?? result.error ?? "unknown"}`);
+      }
+
+      setStageStatus("analyze", "done");
+      if (lastStatus) setOverallStatus(lastStatus);
+    }
+
+    setStageStatus("save", "done");
+    setIsRunning(false);
   }
 
   async function emergencyAbort() {
@@ -180,7 +230,7 @@ export function TestScreen() {
         <ThrottleWarningModal
           throttleValue={selectedPreset.throttle_value}
           safetyThreshold={safetyThreshold}
-          onConfirm={() => { setShowThrottleWarning(false); runTest(); }}
+          onConfirm={() => { setShowThrottleWarning(false); void runTest(); }}
           onCancel={() => setShowThrottleWarning(false)}
         />
       )}
@@ -204,6 +254,21 @@ export function TestScreen() {
                   <option key={p.path} value={p.path}>
                     {p.path}{p.manufacturer ? ` (${p.manufacturer})` : ""}
                   </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Microphone</label>
+              <select
+                className="form-select"
+                value={selectedDeviceIndex}
+                onChange={(e) => setSelectedDeviceIndex(Number(e.target.value) || "")}
+                disabled={isRunning}
+              >
+                <option value="">— System default —</option>
+                {audioDevices.map((d) => (
+                  <option key={d.index} value={d.index}>{d.name}</option>
                 ))}
               </select>
             </div>

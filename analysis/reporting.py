@@ -66,7 +66,7 @@ def build_result_json(
     microphone_name: Optional[str] = None,
     app_version: Optional[str] = None,
     analysis_version: Optional[str] = None,
-) -> dict:
+) -> dict[str, object]:
     """Build the structured JSON result document for one run."""
     return {
         "schema_version": "1",
@@ -87,11 +87,22 @@ def save_result_json(
     artifacts: RunArtifacts,
     test_id: str,
     out_path: str | Path,
-    **kwargs,
+    drone_id: str | None = None,
+    throttle_preset: str | None = None,
+    microphone_name: str | None = None,
+    app_version: str | None = None,
+    analysis_version: str | None = None,
 ) -> Path:
     """Serialize the result to a JSON file and return the path."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = build_result_json(result, artifacts, test_id, **kwargs)
+    payload = build_result_json(
+        result, artifacts, test_id,
+        drone_id=drone_id,
+        throttle_preset=throttle_preset,
+        microphone_name=microphone_name,
+        app_version=app_version,
+        analysis_version=analysis_version,
+    )
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return out_path

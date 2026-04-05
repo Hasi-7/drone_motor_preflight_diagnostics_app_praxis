@@ -6,10 +6,11 @@ structured, typed dataclasses. All legacy fields are preserved.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 import numpy as np
+import numpy.typing as npt
 
 
 # ── Spectral / signal data ─────────────────────────────────────────────────
@@ -17,17 +18,17 @@ import numpy as np
 @dataclass
 class PreprocessedData:
     """Output of the preprocessing stage."""
-    segment: np.ndarray      # float32 audio samples
+    segment: npt.NDArray[np.float32]  # audio samples (librosa float32)
     sample_rate: int
-    start_s: float           # trim start in seconds
-    end_s: float             # trim end in seconds
+    start_s: float                    # trim start in seconds
+    end_s: float                      # trim end in seconds
 
 
 @dataclass
 class SpectralData:
     """Output of the spectral analysis stage."""
-    freqs: np.ndarray        # frequency axis (Hz)
-    psd_db: np.ndarray       # Welch PSD in dB
+    freqs: npt.NDArray[np.float64]   # frequency axis (Hz)
+    psd_db: npt.NDArray[np.float64]  # Welch PSD in dB
 
 
 # ── Fault check results ────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ class FaultCheckResult:
             return 1
         return 0
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "fault_name": self.fault_name,
             "label": self.label,
@@ -72,7 +73,7 @@ class DiagnosticResult:
     overall_status: str      # "READY TO FLY" | "WARNING" | "DO NOT FLY"
     overall_icon: str        # "[GREEN]" | "[YELLOW]" | "[RED]"
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "motor_name": self.motor_name,
             "shaft_freq_hz": round(self.shaft_freq_hz, 2),
@@ -96,7 +97,7 @@ class RunArtifacts:
     fft_npz_path: Optional[Path] = None
     result_json_path: Optional[Path] = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         def _str(p: Optional[Path]) -> Optional[str]:
             return str(p) if p else None
         return {
@@ -117,8 +118,8 @@ class BaselineData:
     """A stored baseline profile (one drone + one throttle preset)."""
     drone_id: str
     throttle_preset: str
-    freqs: np.ndarray
-    psd_db: np.ndarray
+    freqs: npt.NDArray[np.float64]
+    psd_db: npt.NDArray[np.float64]
     capture_count: int = 1
 
     def to_spectral(self) -> SpectralData:

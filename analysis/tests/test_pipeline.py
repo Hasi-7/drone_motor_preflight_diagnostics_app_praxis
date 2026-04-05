@@ -72,6 +72,11 @@ class TestDiagnosticPipeline:
         state = DiagnosticPipeline().run(inp)
 
         assert state.artifacts is not None
+        assert state.artifacts.waveform_png_path is not None
+        assert state.artifacts.psd_png_path is not None
+        assert state.artifacts.preprocessed_npz_path is not None
+        assert state.artifacts.fft_npz_path is not None
+        assert state.artifacts.result_json_path is not None
         assert state.artifacts.waveform_png_path.exists()
         assert state.artifacts.psd_png_path.exists()
         assert state.artifacts.preprocessed_npz_path.exists()
