@@ -2,8 +2,10 @@
   "name": "drone-motor-diagnostics",
   "version": "0.1.0",
   "description": "Drone motor preflight diagnostic desktop app",
-  "main": "dist/main/index.js",
+  "main": "dist/main/main/index.js",
   "scripts": {
+    "preinstall": "node scripts/check-node.js",
+    "postinstall": "electron-builder install-app-deps",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
@@ -19,6 +21,10 @@
   "keywords": ["drone", "betaflight", "diagnostics", "electron"],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": ">=20 <24",
+    "npm": ">=10"
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",
     "@types/node": "^20.0.0",
@@ -47,20 +53,17 @@
       "output": "release"
     },
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "installerIcon": "assets/icon.ico",
-      "uninstallerIcon": "assets/icon.ico"
+      "allowToChangeInstallationDirectory": true
     },
     "extraResources": [
       {
-        "from": "../analysis-sidecar",
+        "from": "../analysis-sidecar/dist",
         "to": "analysis-sidecar",
-        "filter": ["**/*"]
+        "filter": ["analysis_sidecar.exe"]
       }
     ],
     "files": [

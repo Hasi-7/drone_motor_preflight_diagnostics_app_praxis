@@ -131,6 +131,9 @@ export interface SidecarAnalyzeRequest {
   motorName?: string;
   testId?: string;
   micName?: string;
+  // Required for DB persistence after analysis
+  runMode?: RunMode;
+  throttlePresetId?: number;
 }
 
 export interface SidecarAnalyzeResponse {

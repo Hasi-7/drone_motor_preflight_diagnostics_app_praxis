@@ -6,6 +6,7 @@ import { SidecarService } from "./services/sidecar";
 import { SyncService } from "./services/sync";
 import { registerAnalysisHandlers } from "./ipc/analysis";
 import { registerBetaflightHandlers } from "./ipc/betaflight";
+import type { AppSettings } from "../shared/types";
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
@@ -43,13 +44,17 @@ function createWindow(): void {
   });
 
   mainWindow.on("closed", () => {
+    syncService?.setWindow(null);
     mainWindow = null;
   });
+
+  // Pass window reference to sync service so it can emit status events
+  syncService.setWindow(mainWindow);
 
   // Open external links in the system browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https:")) {
-      shell.openExternal(url);
+      void shell.openExternal(url);
     }
     return { action: "deny" };
   });
@@ -75,17 +80,24 @@ async function initServices(): Promise<void> {
 
   syncService = new SyncService(db);
 
+  // Configure Supabase if credentials are already saved
+  const savedSettings = settings.get();
+  syncService.configure(savedSettings.supabaseUrl, savedSettings.supabaseAnonKey);
+
   // Register IPC handlers
-  registerAnalysisHandlers(ipcMain, sidecar, db, appDataDir);
+  registerAnalysisHandlers(ipcMain, sidecar, db, appDataDir, syncService);
   registerBetaflightHandlers(ipcMain);
 
   // Settings IPC
   ipcMain.handle("settings:get", () => settings.get());
-  ipcMain.handle("settings:save", (_e, partial: Parameters<SettingsService["save"]>[0]) =>
-    settings.save(partial),
-  );
+  ipcMain.handle("settings:save", (_e, partial: Partial<AppSettings>) => {
+    const updated = settings.save(partial);
+    // Reconfigure Supabase sync whenever credentials may have changed
+    syncService.configure(updated.supabaseUrl, updated.supabaseAnonKey);
+    return updated;
+  });
 
-  // Start background sync if enabled
+  // Start background sync
   syncService.startBackgroundSync();
 }
 

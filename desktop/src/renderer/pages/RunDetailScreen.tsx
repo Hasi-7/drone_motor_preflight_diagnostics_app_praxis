@@ -20,25 +20,38 @@ export function RunDetailScreen() {
       setRun(r);
       if (!r) { setLoading(false); return; }
 
-      // Load diagnostic JSON
+      // Load diagnostic JSON from result file
       if (r.results_json_path) {
         try {
-          const raw = await window.api.readImageAsDataUrl(r.results_json_path);
-          // Note: readImageAsDataUrl just reads the file — for JSON we decode manually
-          // TODO: add a dedicated readTextFile IPC, for now we load via fetch
-        } catch { /* ignore */ }
+          const text = await window.api.readTextFile(r.results_json_path);
+          if (text) {
+            const parsed = JSON.parse(text) as { diagnostic?: DiagnosticResult };
+            if (parsed.diagnostic) setDiagnostic(parsed.diagnostic);
+          }
+        } catch { /* non-fatal */ }
       }
 
       // Load plot images as data URLs
       if (r.waveform_graph_path) {
-        window.api.readImageAsDataUrl(r.waveform_graph_path).then(setWaveformUrl);
+        window.api.readImageAsDataUrl(r.waveform_graph_path).then(setWaveformUrl).catch(() => null);
       }
       if (r.psd_graph_path) {
-        window.api.readImageAsDataUrl(r.psd_graph_path).then(setPsdUrl);
+        window.api.readImageAsDataUrl(r.psd_graph_path).then(setPsdUrl).catch(() => null);
       }
 
       setLoading(false);
     });
+  }, [testId]);
+
+  // Live sync status updates
+  useEffect(() => {
+    if (!testId) return;
+    const unsub = window.api.onSyncStatusChange(({ testId: updatedId, status }) => {
+      if (updatedId === testId) {
+        setRun((prev) => prev ? { ...prev, sync_status: status as DiagnosticRun["sync_status"] } : prev);
+      }
+    });
+    return unsub;
   }, [testId]);
 
   if (loading) return <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>;
@@ -92,8 +105,8 @@ export function RunDetailScreen() {
         </div>
       </div>
 
-      {/* Fault checks */}
-      {diagnostic && (
+      {/* Fault checks — populated once the result JSON is loaded */}
+      {diagnostic ? (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-title">Fault Analysis — {diagnostic.motor_name}</div>
           <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginBottom: 12 }}>
@@ -126,7 +139,13 @@ export function RunDetailScreen() {
             </tbody>
           </table>
         </div>
-      )}
+      ) : run.results_json_path ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+            Diagnostic data not available — result file may be missing or unreadable.
+          </div>
+        </div>
+      ) : null}
 
       {/* Graphs */}
       <div className="grid-2" style={{ marginBottom: 16 }}>
@@ -149,16 +168,18 @@ export function RunDetailScreen() {
         <div className="card-title">Artifacts</div>
         <table className="data-table">
           <tbody>
-            {[
-              ["WAV Recording", run.raw_wav_path],
-              ["Preprocessed Signal", run.preprocessed_data_path],
-              ["FFT Data", run.fft_data_path],
-              ["Result JSON", run.results_json_path],
-            ].map(([label, path]) => (
-              <tr key={label as string}>
+            {(
+              [
+                ["WAV Recording", run.raw_wav_path],
+                ["Preprocessed Signal", run.preprocessed_data_path],
+                ["FFT Data", run.fft_data_path],
+                ["Result JSON", run.results_json_path],
+              ] as [string, string | null][]
+            ).map(([label, filePath]) => (
+              <tr key={label}>
                 <td style={{ color: "var(--color-text-muted)", fontSize: 12, width: 160 }}>{label}</td>
                 <td style={{ fontFamily: "monospace", fontSize: 11 }}>
-                  {path ?? <span style={{ color: "var(--color-text-muted)" }}>—</span>}
+                  {filePath ?? <span style={{ color: "var(--color-text-muted)" }}>—</span>}
                 </td>
               </tr>
             ))}

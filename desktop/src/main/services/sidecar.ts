@@ -140,12 +140,13 @@ export class SidecarService {
   // ── Internal: spawn and collect stdout ───────────────────────────────
 
   private async runSidecar(args: string[]): Promise<unknown> {
-    const { executable, moduleArgs } = this.resolveSidecarCommand(args);
+    const { executable, moduleArgs, cwd, env } = this.resolveSidecarCommand(args);
 
     return new Promise((resolve, reject) => {
       const proc = spawn(executable, moduleArgs, {
         stdio: ["ignore", "pipe", "pipe"],
-        cwd: this.sidecarDir,
+        cwd,
+        env,
       });
       this.runningProcesses.add(proc);
 
@@ -184,17 +185,34 @@ export class SidecarService {
    * In development, we fall back to calling `python -m analysis.api` from
    * the repo root so the developer does not need a separate build step.
    */
-  private resolveSidecarCommand(cliArgs: string[]): { executable: string; moduleArgs: string[] } {
+  private resolveSidecarCommand(cliArgs: string[]): {
+    executable: string;
+    moduleArgs: string[];
+    cwd: string;
+    env?: NodeJS.ProcessEnv;
+  } {
     // Packaged: check for compiled exe
     const exePath = path.join(this.sidecarDir, "analysis_sidecar.exe");
     if (fs.existsSync(exePath)) {
-      return { executable: exePath, moduleArgs: cliArgs };
+      return { executable: exePath, moduleArgs: cliArgs, cwd: this.sidecarDir };
     }
 
     // Development fallback: python -m analysis.api from repo root
+    const repoRoot = path.resolve(this.sidecarDir, "..");
+    const pythonPath = process.platform === "win32" ? "PYTHONPATH" : "PYTHONPATH";
+    const existingPythonPath = process.env[pythonPath];
+    const env = {
+      ...process.env,
+      [pythonPath]: existingPythonPath
+        ? `${repoRoot}${path.delimiter}${existingPythonPath}`
+        : repoRoot,
+    };
+
     return {
       executable: "python",
       moduleArgs: ["-m", "analysis.api", ...cliArgs],
+      cwd: repoRoot,
+      env,
     };
   }
 }

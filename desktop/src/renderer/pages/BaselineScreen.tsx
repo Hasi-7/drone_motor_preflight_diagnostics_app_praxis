@@ -153,6 +153,25 @@ export function BaselineScreen() {
         String(selectedPresetId),
       );
       addLog(`Baseline saved → ${avgResult.path} (${avgResult.captureCount} captures)`);
+
+      // Persist baseline profile metadata to SQLite
+      if (typeof selectedPresetId === "number") {
+        try {
+          await window.api.upsertBaselineProfile({
+            drone_id: selectedDroneId,
+            throttle_preset_id: selectedPresetId,
+            capture_count: avgResult.captureCount,
+            baseline_result_path: avgResult.path,
+            baseline_preprocessed_path: "",
+            baseline_fft_path: "",
+            baseline_plot_path: "",
+          });
+          addLog("Baseline profile saved to local database.");
+        } catch (dbErr) {
+          addLog(`Warning: could not save baseline to database — ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`);
+        }
+      }
+
       setIsAveraging(false);
       setDone(true);
     } else {

@@ -1,5 +1,10 @@
 /**
  * IPC handlers for analysis / sidecar operations.
+ *
+ * After a successful analysis run, the handler:
+ *   1. Persists the run metadata to SQLite via DatabaseService
+ *   2. Enqueues the run for remote upload via SyncService
+ *   3. Returns the SidecarAnalyzeResponse to the renderer
  */
 import fs from "fs";
 import path from "path";
@@ -7,24 +12,28 @@ import { dialog } from "electron";
 import type { IpcMain } from "electron";
 import type { DatabaseService } from "../services/database";
 import type { SidecarService } from "../services/sidecar";
-import type { AudioDevice } from "../../shared/preload-api";
+import type { SyncService } from "../services/sync";
 import type {
   DiagnosticStatus,
   RunArtifacts,
   SidecarAnalyzeRequest,
   SidecarAnalyzeResponse,
 } from "../../shared/types";
+import type { AudioDevice } from "../../shared/preload-api";
 
 export function registerAnalysisHandlers(
   ipcMain: IpcMain,
   sidecar: SidecarService,
   db: DatabaseService,
   appDataDir: string,
+  syncService: SyncService,
 ): void {
   // ── analyze ─────────────────────────────────────────────────────────────
   ipcMain.handle("analysis:analyze", async (_event, req: SidecarAnalyzeRequest): Promise<SidecarAnalyzeResponse> => {
+    const testId = req.testId ?? crypto.randomUUID();
+    const outputDir = req.outputDir ?? path.join(appDataDir, "runs", testId);
+
     try {
-      const outputDir = req.outputDir ?? path.join(appDataDir, "runs", req.testId ?? "unknown");
       const result = await sidecar.analyze({
         wavPath: req.wavPath,
         baselineNpzPath: req.baselineNpzPath,
@@ -35,7 +44,7 @@ export function registerAnalysisHandlers(
         startS: req.startS,
         endS: req.endS,
         motorName: req.motorName,
-        testId: req.testId,
+        testId,
         micName: req.micName,
       }) as {
         status: string;
@@ -44,6 +53,39 @@ export function registerAnalysisHandlers(
         result_json_path: string;
         artifacts: RunArtifacts;
       };
+
+      // Persist to SQLite when we have sufficient metadata
+      if (req.droneId && req.throttlePresetId !== undefined) {
+        try {
+          const now = new Date().toISOString();
+          db.insertDiagnosticRun({
+            test_id: result.test_id,
+            drone_id: req.droneId,
+            motor_label: req.motorName ?? "Motor",
+            run_mode: req.runMode ?? "full_sequence",
+            throttle_preset_id: req.throttlePresetId,
+            recorded_at: now,
+            completed_at: now,
+            microphone_name: req.micName ?? "",
+            overall_status: result.overall_status ?? null,
+            final_classification: result.overall_status ?? null,
+            results_json_path: result.result_json_path ?? null,
+            raw_wav_path: req.wavPath,
+            raw_mp3_path: null,
+            preprocessed_data_path: result.artifacts?.preprocessed_npz ?? null,
+            fft_data_path: result.artifacts?.fft_npz ?? null,
+            waveform_graph_path: result.artifacts?.waveform_png ?? null,
+            psd_graph_path: result.artifacts?.psd_png ?? null,
+            sync_status: "pending",
+            retry_count: 0,
+            last_sync_error: null,
+          });
+          syncService.enqueue(result.test_id);
+        } catch (dbErr) {
+          // Non-fatal: log but don't fail the analysis response
+          console.error("Failed to persist run to DB:", dbErr);
+        }
+      }
 
       return {
         status: "ok",
@@ -55,7 +97,7 @@ export function registerAnalysisHandlers(
     } catch (err) {
       return {
         status: "error",
-        testId: req.testId ?? "",
+        testId,
         overallStatus: null,
         resultJsonPath: null,
         artifacts: null,
@@ -93,24 +135,6 @@ export function registerAnalysisHandlers(
     });
   });
 
-  // ── DB handlers ───────────────────────────────────────────────────────────
-  ipcMain.handle("db:get-drone-profiles", () => db.getDroneProfiles());
-  ipcMain.handle("db:create-drone-profile", (_e, args) =>
-    db.createDroneProfile(args.droneId, args.displayName, args.notes));
-
-  ipcMain.handle("db:get-throttle-presets", () => db.getThrottlePresets());
-  ipcMain.handle("db:create-throttle-preset", (_e, preset) =>
-    db.createThrottlePreset(preset));
-
-  ipcMain.handle("db:get-baseline-profiles", (_e, args) =>
-    db.getBaselineProfiles(args.droneId));
-
-  ipcMain.handle("db:get-diagnostic-runs", (_e, args) =>
-    db.getDiagnosticRuns(args.limit, args.offset));
-
-  ipcMain.handle("db:get-diagnostic-run", (_e, args) =>
-    db.getDiagnosticRun(args.testId));
-
   // ── Audio recording ────────────────────────────────────────────────────────
   ipcMain.handle("audio:list-devices", async () => {
     const result = await sidecar.listDevices() as { status: string; devices: AudioDevice[] };
@@ -130,6 +154,27 @@ export function registerAnalysisHandlers(
     return { path: result.path };
   });
 
+  // ── DB handlers ───────────────────────────────────────────────────────────
+  ipcMain.handle("db:get-drone-profiles", () => db.getDroneProfiles());
+  ipcMain.handle("db:create-drone-profile", (_e, args: { droneId: string; displayName: string; notes?: string }) =>
+    db.createDroneProfile(args.droneId, args.displayName, args.notes));
+
+  ipcMain.handle("db:get-throttle-presets", () => db.getThrottlePresets());
+  ipcMain.handle("db:create-throttle-preset", (_e, preset: Parameters<DatabaseService["createThrottlePreset"]>[0]) =>
+    db.createThrottlePreset(preset));
+
+  ipcMain.handle("db:get-baseline-profiles", (_e, args: { droneId: string }) =>
+    db.getBaselineProfiles(args.droneId));
+
+  ipcMain.handle("db:upsert-baseline-profile", (_e, profile: Parameters<DatabaseService["upsertBaselineProfile"]>[0]) =>
+    db.upsertBaselineProfile(profile));
+
+  ipcMain.handle("db:get-diagnostic-runs", (_e, args: { limit?: number; offset?: number }) =>
+    db.getDiagnosticRuns(args.limit, args.offset));
+
+  ipcMain.handle("db:get-diagnostic-run", (_e, args: { testId: string }) =>
+    db.getDiagnosticRun(args.testId));
+
   // ── Filesystem helpers ────────────────────────────────────────────────────
   ipcMain.handle("fs:read-image-data-url", (_e, { filePath }: { filePath: string }) => {
     if (!fs.existsSync(filePath)) return null;
@@ -137,6 +182,11 @@ export function registerAnalysisHandlers(
     const mime = ext === ".png" ? "image/png" : "image/jpeg";
     const b64 = fs.readFileSync(filePath).toString("base64");
     return `data:${mime};base64,${b64}`;
+  });
+
+  ipcMain.handle("fs:read-text-file", (_e, { filePath }: { filePath: string }) => {
+    if (!fs.existsSync(filePath)) return null;
+    return fs.readFileSync(filePath, "utf-8");
   });
 
   ipcMain.handle("fs:show-save-dialog", async (_e, { defaultPath }: { defaultPath?: string }) => {

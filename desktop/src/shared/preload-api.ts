@@ -84,6 +84,9 @@ export interface AppApi {
 
   // ── Database — baseline profiles ──────────────────────────────────────
   getBaselineProfiles: (droneId: string) => Promise<BaselineProfile[]>;
+  upsertBaselineProfile: (
+    profile: Omit<BaselineProfile, "id" | "created_at" | "updated_at">,
+  ) => Promise<BaselineProfile>;
 
   // ── Database — diagnostic runs ────────────────────────────────────────
   getDiagnosticRuns: (limit?: number, offset?: number) => Promise<DiagnosticRun[]>;
@@ -95,6 +98,7 @@ export interface AppApi {
 
   // ── Filesystem ────────────────────────────────────────────────────────
   readImageAsDataUrl: (filePath: string) => Promise<string>;
+  readTextFile: (filePath: string) => Promise<string | null>;
   showSaveDialog: (defaultPath?: string) => Promise<string | undefined>;
 
   // ── Events from main process ──────────────────────────────────────────

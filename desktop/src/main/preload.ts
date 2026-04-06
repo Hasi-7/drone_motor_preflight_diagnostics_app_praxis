@@ -80,6 +80,11 @@ const api: AppApi = {
   getBaselineProfiles: (droneId: string): Promise<BaselineProfile[]> =>
     ipcRenderer.invoke("db:get-baseline-profiles", { droneId }),
 
+  upsertBaselineProfile: (
+    profile: Omit<BaselineProfile, "id" | "created_at" | "updated_at">
+  ): Promise<BaselineProfile> =>
+    ipcRenderer.invoke("db:upsert-baseline-profile", profile),
+
   // ── Database — diagnostic runs ────────────────────────────────────────
   getDiagnosticRuns: (limit?: number, offset?: number): Promise<DiagnosticRun[]> =>
     ipcRenderer.invoke("db:get-diagnostic-runs", { limit, offset }),
@@ -97,6 +102,9 @@ const api: AppApi = {
   // ── Filesystem ────────────────────────────────────────────────────────
   readImageAsDataUrl: (filePath: string): Promise<string> =>
     ipcRenderer.invoke("fs:read-image-data-url", { filePath }),
+
+  readTextFile: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke("fs:read-text-file", { filePath }),
 
   showSaveDialog: (defaultPath?: string): Promise<string | undefined> =>
     ipcRenderer.invoke("fs:show-save-dialog", { defaultPath }),

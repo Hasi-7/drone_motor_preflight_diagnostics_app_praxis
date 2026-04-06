@@ -193,6 +193,10 @@ export function TestScreen() {
           outputDir: `app-data/runs/${Date.now()}`,
           startS: trimStartS,
           endS: trimEndS,
+          motorName: MOTOR_LABELS[wavPaths.indexOf(wavPath)] ?? "Motor",
+          runMode,
+          throttlePresetId: typeof selectedPresetId === "number" ? selectedPresetId : undefined,
+          micName: audioDevices.find((d) => d.index === selectedDeviceIndex)?.name,
         });
         if (result.overallStatus) lastStatus = result.overallStatus;
         log(`Analysis: ${result.overallStatus ?? result.error ?? "unknown"}`);

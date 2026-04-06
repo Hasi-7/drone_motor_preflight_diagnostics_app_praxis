@@ -7,9 +7,10 @@
  *   - marks jobs as synced on success
  *   - retries failures with exponential backoff (max MAX_RETRY_DELAY_MS)
  *   - never uploads raw WAV files by default
+ *   - emits "sync:status-change" IPC events to the renderer window
  */
 import fs from "fs";
-import path from "path";
+import { BrowserWindow } from "electron";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import type { DatabaseService } from "./database";
 import type { DiagnosticRun } from "../../shared/types";
@@ -22,16 +23,13 @@ export class SyncService {
   private db: DatabaseService;
   private supabase: SupabaseClient | null = null;
   private timer: NodeJS.Timeout | null = null;
-  private supabaseUrl = "";
-  private supabaseAnonKey = "";
+  private mainWindow: BrowserWindow | null = null;
 
   constructor(db: DatabaseService) {
     this.db = db;
   }
 
   configure(supabaseUrl: string, anonKey: string): void {
-    this.supabaseUrl = supabaseUrl;
-    this.supabaseAnonKey = anonKey;
     if (supabaseUrl && anonKey) {
       this.supabase = createClient(supabaseUrl, anonKey);
     } else {
@@ -39,8 +37,13 @@ export class SyncService {
     }
   }
 
+  setWindow(win: BrowserWindow | null): void {
+    this.mainWindow = win;
+  }
+
   startBackgroundSync(): void {
-    this.timer = setInterval(() => this.syncPending(), SYNC_INTERVAL_MS);
+    if (this.timer) return;
+    this.timer = setInterval(() => { void this.syncPending(); }, SYNC_INTERVAL_MS);
   }
 
   stopBackgroundSync(): void {
@@ -50,28 +53,57 @@ export class SyncService {
     }
   }
 
+  /**
+   * Enqueue a test run for upload and immediately notify the renderer.
+   * Called by the analysis IPC handler after a successful run.
+   */
+  enqueue(testId: string): void {
+    this.db.upsertUploadJob(testId);
+    this.emitSyncStatus(testId, "pending");
+  }
+
+  /**
+   * Process all pending/errored upload jobs. Called on each timer tick.
+   * Can also be called directly to trigger an immediate sync attempt.
+   */
   async syncPending(): Promise<void> {
     if (!this.supabase) return;
 
     const jobs = this.db.getPendingUploadJobs();
     for (const job of jobs) {
+      // Mark as syncing
+      this.db.updateDiagnosticRun(job.test_id, { sync_status: "syncing" });
+      this.emitSyncStatus(job.test_id, "syncing");
+
       try {
         const run = this.db.getDiagnosticRun(job.test_id);
-        if (!run) continue;
+        if (!run) {
+          this.db.markUploadJobSynced(job.test_id);
+          continue;
+        }
 
         await this.uploadRun(run);
         this.db.markUploadJobSynced(job.test_id);
+        this.emitSyncStatus(job.test_id, "synced");
       } catch (err) {
         const retryDelay = Math.min(
           BASE_RETRY_DELAY_MS * Math.pow(2, job.attempt_count),
-          MAX_RETRY_DELAY_MS
+          MAX_RETRY_DELAY_MS,
         );
         this.db.markUploadJobError(
           job.test_id,
           err instanceof Error ? err.message : String(err),
-          new Date(Date.now() + retryDelay)
+          new Date(Date.now() + retryDelay),
         );
+        this.db.updateDiagnosticRun(job.test_id, { sync_status: "error" });
+        this.emitSyncStatus(job.test_id, "error");
       }
+    }
+  }
+
+  private emitSyncStatus(testId: string, status: string): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send("sync:status-change", { testId, status });
     }
   }
 
