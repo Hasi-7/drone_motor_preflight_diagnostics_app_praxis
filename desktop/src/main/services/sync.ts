@@ -30,11 +30,41 @@ export class SyncService {
   }
 
   configure(supabaseUrl: string, anonKey: string): void {
-    if (supabaseUrl && anonKey) {
-      this.supabase = createClient(supabaseUrl, anonKey);
-    } else {
-      this.supabase = null;
+    this.supabase = null;
+
+    if (!supabaseUrl || !anonKey) return;
+
+    // Reject non-HTTPS or non-Supabase URLs to prevent misconfiguration
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(supabaseUrl);
+    } catch {
+      console.error("SyncService: invalid Supabase URL, sync disabled");
+      return;
     }
+    if (parsedUrl.protocol !== "https:" || !parsedUrl.hostname.includes("supabase")) {
+      console.error("SyncService: Supabase URL must be https://*.supabase.co, sync disabled");
+      return;
+    }
+
+    // Reject service role keys — they grant full DB access and must never ship in the client
+    // Service role JWTs have role=service_role in their payload
+    try {
+      const payloadB64 = anonKey.split(".")[1];
+      if (payloadB64) {
+        const payload = JSON.parse(Buffer.from(payloadB64, "base64").toString("utf-8")) as Record<string, unknown>;
+        if (payload["role"] === "service_role") {
+          console.error("SyncService: service role key detected — use the anon/public key only, sync disabled");
+          return;
+        }
+      }
+    } catch {
+      // Malformed JWT — fall through and let createClient reject it at network time
+    }
+
+    this.supabase = createClient(supabaseUrl, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
   }
 
   setWindow(win: BrowserWindow | null): void {
