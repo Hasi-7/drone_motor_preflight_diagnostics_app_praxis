@@ -16,10 +16,9 @@ export function EmergencyStop({ onStop, disabled }: EmergencyStopProps) {
       className="btn btn-emergency"
       onClick={handleClick}
       disabled={disabled}
-      style={{ width: "100%" }}
       aria-label="Emergency stop — halt all motors immediately"
     >
-      ⬛ EMERGENCY STOP
+      Emergency stop
     </button>
   );
 }

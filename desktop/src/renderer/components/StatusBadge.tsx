@@ -7,9 +7,9 @@ interface DiagnosticBadgeProps {
 
 export function DiagnosticBadge({ status }: DiagnosticBadgeProps) {
   if (!status) return <span className="badge badge-grey">Unknown</span>;
-  if (status === "READY TO FLY") return <span className="badge badge-green">✓ Ready to Fly</span>;
-  if (status === "WARNING") return <span className="badge badge-yellow">⚠ Warning</span>;
-  return <span className="badge badge-red">✕ Do Not Fly</span>;
+  if (status === "READY TO FLY") return <span className="badge badge-green">Ready To Fly</span>;
+  if (status === "WARNING") return <span className="badge badge-yellow">Warning</span>;
+  return <span className="badge badge-red">Do Not Fly</span>;
 }
 
 interface SyncBadgeProps {

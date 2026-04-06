@@ -8,8 +8,8 @@ export function SettingsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    window.api.getSettings().then((s) => {
-      setSettings(s);
+    window.api.getSettings().then((state) => {
+      setSettings(state);
       setLoading(false);
     });
   }, []);
@@ -25,83 +25,98 @@ export function SettingsScreen() {
     setTimeout(() => setSaved(false), 2000);
   }
 
-  if (loading) return <p style={{ color: "var(--color-text-muted)" }}>Loading…</p>;
+  if (loading) return <div className="helper-text">Loading settings...</div>;
 
   return (
-    <div>
+    <div className="page">
       <div className="page-header">
-        <h1>Settings</h1>
-        <p>Configure Supabase sync, storage, safety thresholds, and microphone defaults.</p>
-      </div>
-
-      {/* Supabase */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Supabase Sync</div>
-        <div className="form-group">
-          <label className="form-label">Supabase Project URL</label>
-          <input className="form-input" placeholder="https://xyz.supabase.co"
-            value={settings.supabaseUrl}
-            onChange={(e) => update("supabaseUrl", e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Supabase Anon Key</label>
-          <input className="form-input" type="password" placeholder="eyJ..."
-            value={settings.supabaseAnonKey}
-            onChange={(e) => update("supabaseAnonKey", e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input type="checkbox" checked={settings.autoSyncEnabled}
-              onChange={(e) => update("autoSyncEnabled", e.target.checked)} />
-            Enable automatic background sync
-          </label>
+        <div>
+          <div className="section-label">System</div>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-subtitle">Configure sync, storage, safety defaults, and microphone preferences without leaving the desktop workflow.</p>
         </div>
       </div>
 
-      {/* Storage */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Local Storage</div>
-        <div className="form-group">
-          <label className="form-label">Data Directory</label>
-          <input className="form-input" placeholder="Leave blank to use default app data folder"
-            value={settings.localStoragePath}
-            onChange={(e) => update("localStoragePath", e.target.value)} />
-          <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
-            WAV recordings, analysis results, and plots are stored here.
+      <div className="card-grid">
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <div className="section-label">Supabase sync</div>
+              <div className="card-title">Cloud connection</div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Safety */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Safety</div>
-        <div className="form-group">
-          <label className="form-label">Throttle Safety Threshold (Betaflight 1000–2000 scale)</label>
-          <input className="form-input" type="number" min={1000} max={1999} step={50}
-            value={settings.throttleSafetyThreshold}
-            onChange={(e) => update("throttleSafetyThreshold", Number(e.target.value))} />
-          <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 4 }}>
-            Presets above this value will require an explicit prop-removal confirmation. Default: 1200.
+          <div className="stack-lg">
+            <div className="form-group">
+              <label className="form-label">Supabase project URL</label>
+              <input className="field-input" placeholder="https://xyz.supabase.co" value={settings.supabaseUrl} onChange={(e) => update("supabaseUrl", e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Supabase anon key</label>
+              <input className="field-input" type="password" placeholder="eyJ..." value={settings.supabaseAnonKey} onChange={(e) => update("supabaseAnonKey", e.target.value)} />
+            </div>
+
+            <label className="toggle-row">
+              <div>
+                <div className="form-label">Enable automatic background sync</div>
+                <div className="form-hint">Queue uploads and retry completed runs when the device is online.</div>
+              </div>
+              <span className={`toggle ${settings.autoSyncEnabled ? "is-on" : ""}`}>
+                <input className="toggle-input" type="checkbox" checked={settings.autoSyncEnabled} onChange={(e) => update("autoSyncEnabled", e.target.checked)} />
+              </span>
+            </label>
           </div>
-        </div>
+        </section>
+
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <div className="section-label">Local storage</div>
+              <div className="card-title">Workspace location</div>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Data directory</label>
+            <input className="field-input" placeholder="Leave blank to use the default app data folder" value={settings.localStoragePath} onChange={(e) => update("localStoragePath", e.target.value)} />
+            <div className="helper-text">WAV recordings, analysis results, and generated plots are stored here.</div>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <div className="section-label">Safety</div>
+              <div className="card-title">Operational guardrails</div>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Throttle safety threshold</label>
+            <input className="field-input" type="number" min={1000} max={1999} step={50} value={settings.throttleSafetyThreshold} onChange={(e) => update("throttleSafetyThreshold", Number(e.target.value))} />
+            <div className="helper-text">Presets above this Betaflight-scale value require explicit prop-removal confirmation. Default: 1200.</div>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <div className="section-label">Audio</div>
+              <div className="card-title">Capture defaults</div>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Default microphone name</label>
+            <input className="field-input" placeholder="Leave blank to use the system default microphone" value={settings.defaultMicName} onChange={(e) => update("defaultMicName", e.target.value)} />
+          </div>
+        </section>
       </div>
 
-      {/* Microphone */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">Audio</div>
-        <div className="form-group">
-          <label className="form-label">Default Microphone Name</label>
-          <input className="form-input" placeholder="Leave blank to use system default"
-            value={settings.defaultMicName}
-            onChange={(e) => update("defaultMicName", e.target.value)} />
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button className="btn btn-primary" onClick={handleSave}>
-          Save Settings
-        </button>
-        {saved && <span style={{ color: "var(--color-green)", fontSize: 13 }}>✓ Saved</span>}
+      <div className="page-actions">
+        <button className="btn btn-primary" onClick={handleSave}>Save settings</button>
+        {saved && <span className="helper-text" style={{ color: "var(--green)" }}>Saved</span>}
       </div>
     </div>
   );

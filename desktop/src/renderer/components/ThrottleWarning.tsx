@@ -22,25 +22,17 @@ export function ThrottleWarningModal({
   if (throttleValue <= safetyThreshold) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      <div className="card" style={{ maxWidth: 420, width: "100%" }}>
-        <div style={{ color: "var(--color-yellow)", fontSize: 32, textAlign: "center", marginBottom: 12 }}>
-          ⚠
-        </div>
-        <h2 style={{ textAlign: "center", marginBottom: 8 }}>High Throttle Warning</h2>
-        <p style={{ color: "var(--color-text-muted)", textAlign: "center", marginBottom: 16 }}>
+    <div className="modal-backdrop">
+      <div className="card modal-card">
+        <div className="modal-icon">!</div>
+        <h2 className="modal-title">High throttle warning</h2>
+        <p className="modal-copy">
           The selected throttle value ({throttleValue}) exceeds the safety threshold of {safetyThreshold}.
         </p>
-        <div className="warning-banner" style={{ textAlign: "center" }}>
+        <div className="warning-banner" style={{ marginTop: 16, textAlign: "center" }}>
           PROPELLERS MUST BE REMOVED before running this test.
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0", cursor: "pointer" }}>
+        <label className="surface-muted" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={confirmed}
@@ -48,7 +40,7 @@ export function ThrottleWarningModal({
           />
           <span>I confirm that all propellers have been removed from this drone.</span>
         </label>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="modal-actions">
           <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onCancel}>
             Cancel
           </button>
