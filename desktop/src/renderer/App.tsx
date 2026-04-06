@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import { HashRouter, NavLink, Route, Routes } from "react-router-dom";
 import { TestScreen } from "./pages/TestScreen";
 import { BaselineScreen } from "./pages/BaselineScreen";
 import { HistoryScreen } from "./pages/HistoryScreen";
@@ -8,7 +8,7 @@ import { SettingsScreen } from "./pages/SettingsScreen";
 
 export function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <div className="app-layout">
         <nav className="sidebar">
           <div className="sidebar-logo">Motor Diagnostics</div>
@@ -37,6 +37,6 @@ export function App() {
           </Routes>
         </main>
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

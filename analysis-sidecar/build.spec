@@ -1,45 +1,59 @@
 # PyInstaller spec file for the analysis sidecar executable.
 #
 # Build command (from repo root):
-#   pyinstaller analysis-sidecar/build.spec
+#   python -m PyInstaller analysis-sidecar/build.spec --clean \
+#       --distpath analysis-sidecar/dist \
+#       --workpath analysis-sidecar/build
+#
+# Or simply run:
+#   analysis-sidecar\build.bat
 #
 # Output: analysis-sidecar/dist/analysis_sidecar.exe
-# This exe is copied into the Electron NSIS installer resources.
+# Bundled into the Electron NSIS installer via extraResources.
 
-import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH).parent  # repo root
-ANALYSIS_PKG = str(ROOT / "analysis")
 
 a = Analysis(
-    [str(ROOT / "analysis" / "api.py")],
+    [str(ROOT / "analysis-sidecar" / "sidecar_main.py")],
     pathex=[str(ROOT)],
     binaries=[],
     datas=[],
     hiddenimports=[
-        # scipy / librosa dynamic imports
+        # scipy — dynamic import of C extension modules
         "scipy.signal",
         "scipy.io",
         "scipy.io.wavfile",
+        "scipy.signal.windows",
+        # librosa and its dependencies
         "librosa",
         "librosa.core",
         "librosa.util",
+        "librosa.filters",
+        "audioread",
+        # sounddevice / soundfile for recording
         "soundfile",
         "sounddevice",
+        # matplotlib — non-interactive backend
         "matplotlib",
         "matplotlib.backends.backend_agg",
+        "matplotlib.figure",
+        # numpy
         "numpy",
+        "numpy.core",
     ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[
-        # Keep the exe lean — we don't need a full Qt/Tk stack
+        # Strip heavy GUI toolkits — the sidecar is headless
         "tkinter",
+        "_tkinter",
         "PyQt5",
         "PyQt6",
         "PySide2",
         "PySide6",
+        "wx",
     ],
     noarchive=False,
 )
@@ -59,12 +73,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,   # console=True — sidecar communicates via stdout/stderr
+    # console=True: the sidecar communicates via stdout/stderr, needs a console
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # Output into analysis-sidecar/dist/ so the Electron build can copy it
-    distpath=str(ROOT / "analysis-sidecar" / "dist"),
 )

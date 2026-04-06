@@ -5,6 +5,10 @@ __pycache__/
 .venv/
 venv/
 
+# PyInstaller
+analysis-sidecar/build/
+analysis-sidecar/dist/
+
 # Node / Electron
 node_modules/
 dist/
