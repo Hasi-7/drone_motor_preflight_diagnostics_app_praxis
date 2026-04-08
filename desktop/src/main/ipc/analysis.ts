@@ -31,7 +31,12 @@ export function registerAnalysisHandlers(
   // ── analyze ─────────────────────────────────────────────────────────────
   ipcMain.handle("analysis:analyze", async (_event, req: SidecarAnalyzeRequest): Promise<SidecarAnalyzeResponse> => {
     const testId = req.testId ?? crypto.randomUUID();
-    const outputDir = req.outputDir ?? path.join(appDataDir, "runs", testId);
+    // Always generate an absolute output directory in the main process.
+    // Renderer-supplied outputDir is intentionally ignored: relative paths
+    // written by the sidecar (cwd = repoRoot) cannot be resolved correctly
+    // by Electron later (cwd = desktop/), so the main process is the only
+    // place that can produce a path both processes agree on.
+    const outputDir = path.join(appDataDir, "runs", testId);
 
     try {
       const result = await sidecar.analyze({
@@ -146,8 +151,13 @@ export function registerAnalysisHandlers(
     duration: number;
     deviceIndex?: number;
   }) => {
+    // Normalize to absolute so the sidecar writes to a predictable location
+    // and the returned path can be read back by Electron without cwd ambiguity.
+    const outPath = path.isAbsolute(args.outPath)
+      ? args.outPath
+      : path.join(appDataDir, args.outPath);
     const result = await sidecar.recordAudio({
-      outPath: args.outPath,
+      outPath,
       duration: args.duration,
       deviceIndex: args.deviceIndex,
     }) as { status: string; path: string };

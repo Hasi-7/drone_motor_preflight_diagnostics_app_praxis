@@ -143,7 +143,7 @@ export function TestScreen() {
         const label = MOTOR_LABELS[idx] ?? `Motor ${idx + 1}`;
         log(`Starting ${label} + recording ${recordDurationS}s...`);
 
-        const wavPath = `app-data/runs/${selectedDroneId}/${label.replace(" ", "_")}_${Date.now()}.wav`;
+        const wavPath = `runs/${selectedDroneId}/${label.replace(" ", "_")}_${Date.now()}.wav`;
 
         const [motorResult, recordResult] = await Promise.all([
           window.api.runMotor({
@@ -194,7 +194,6 @@ export function TestScreen() {
           wavPath,
           droneId: selectedDroneId,
           throttlePreset: String(selectedPresetId),
-          outputDir: `app-data/runs/${Date.now()}`,
           startS: trimStartS,
           endS: trimEndS,
           motorName: MOTOR_LABELS[wavPaths.indexOf(wavPath)] ?? "Motor",

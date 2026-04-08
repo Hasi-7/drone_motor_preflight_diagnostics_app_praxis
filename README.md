@@ -112,8 +112,23 @@ Sync is non-blocking — the app queues uploads and retries in the background.
 
 - Node.js 20–23 + npm 10+
 - Python 3.11+
-- PyInstaller: `pip install pyinstaller`
-- Python dependencies: `pip install -r analysis/requirements.txt`
+
+### Step 0 — Create the Python virtual environment
+
+Run once from the repo root. This creates an isolated `.venv/` that the app and
+build steps use. The app will not start in dev mode without it.
+
+**Windows:**
+```bat
+python -m venv .venv
+.venv\Scripts\python -m pip install -r analysis\requirements.txt
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r analysis/requirements.txt
+```
 
 ### Step 1 — Build the Python sidecar
 
@@ -139,12 +154,19 @@ The installer is written to `desktop/release/`.
 
 ### Development mode
 
+Complete the Python venv setup (Step 0) first, then:
+
 ```bash
 cd desktop
 npm install
 npm run dev        # starts renderer (Vite) + main process (tsc --watch)
 npm run electron   # in a second terminal
 ```
+
+The app resolves `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python`
+(macOS/Linux) from the repo root and verifies all required packages are
+importable before spawning the sidecar. If the environment is missing or
+incomplete you will see a clear error with the exact command to fix it.
 
 ---
 

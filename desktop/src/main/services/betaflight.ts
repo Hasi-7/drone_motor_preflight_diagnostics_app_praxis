@@ -4,7 +4,10 @@
  * MSP (MultiWii Serial Protocol) is the native API for Betaflight. This
  * implementation uses the minimum set of MSP commands needed for motor testing:
  *
- *   MSP_IDENT         (100) — firmware version
+ *   MSP_API_VERSION   (1)   — protocol/API version (modern handshake, BF 3.x+)
+ *   MSP_FC_VARIANT    (2)   — FC identifier string e.g. "BTFL"
+ *   MSP_FC_VERSION    (3)   — firmware major/minor/patch
+ *   MSP_IDENT         (100) — legacy firmware version (fallback for older FW)
  *   MSP_SET_MOTOR     (214) — set all 4 motor throttle values
  *   MSP_MOTOR         (104) — read current motor values
  *   MSP_EEPROM_WRITE  (250) — persist config (NOT called in test sessions)
@@ -22,9 +25,13 @@
 import { SerialPort } from "serialport";
 import type { WebContents } from "electron";
 
-// MSP v1 command codes
+// MSP v1 command codes — modern (Betaflight 3.x+)
+const MSP_API_VERSION = 1;
+const MSP_FC_VARIANT = 2;
+const MSP_FC_VERSION = 3;
+// MSP v1 command codes — legacy / motor control
 const MSP_IDENT = 100;
-const MSP_MOTOR = 104;
+const MSP_MOTOR = 104
 const MSP_SET_MOTOR = 214;
 const MSP_FEATURE = 36;
 const MSP_SET_FEATURE = 37;
@@ -89,10 +96,33 @@ export class BetaflightController {
   // ── Firmware version ────────────────────────────────────────────────────
 
   async getFirmwareVersion(): Promise<string> {
-    const payload = await this.sendCommand(MSP_IDENT, Buffer.alloc(0));
-    if (payload.length < 4) return "unknown";
-    const version = payload[0];
-    return `Betaflight ${version}`;
+    // Try modern MSP commands first (Betaflight 3.x+).
+    // MSP_API_VERSION, MSP_FC_VARIANT and MSP_FC_VERSION are supported by all
+    // current Betaflight releases and are what Betaflight Configurator uses for
+    // its initial handshake.
+    try {
+      const apiPayload = await this.sendCommand(MSP_API_VERSION, Buffer.alloc(0));
+      // [protocol_version, api_major, api_minor]
+      const apiMajor = apiPayload[1] ?? 0;
+      const apiMinor = apiPayload[2] ?? 0;
+
+      const variantPayload = await this.sendCommand(MSP_FC_VARIANT, Buffer.alloc(0));
+      const variant = variantPayload.subarray(0, 4).toString("ascii").replace(/\0/g, "");
+
+      const versionPayload = await this.sendCommand(MSP_FC_VERSION, Buffer.alloc(0));
+      const major = versionPayload[0] ?? 0;
+      const minor = versionPayload[1] ?? 0;
+      const patch = versionPayload[2] ?? 0;
+
+      return `${variant} ${major}.${minor}.${patch} (API ${apiMajor}.${apiMinor})`;
+    } catch {
+      // Fall back to legacy MSP_IDENT for firmware older than BF 3.x.
+      // If this also fails, propagate the error so the caller knows the FC is
+      // not responding and can close the port rather than leaving it dangling.
+      const payload = await this.sendCommand(MSP_IDENT, Buffer.alloc(0));
+      if (payload.length < 4) return "unknown";
+      return `Betaflight ${payload[0]}`;
+    }
   }
 
   // ── Config snapshot / restore ───────────────────────────────────────────

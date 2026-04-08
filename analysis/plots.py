@@ -5,13 +5,13 @@ Behavioral parity with sound_final_design_2.py::plot_time and plot_psd,
 with the key change that plots are saved to disk (headless) rather than
 displayed interactively via plt.show(). This enables the sidecar to run
 without a display.
+
+matplotlib is imported lazily inside each function so that non-plotting
+code paths (record, baseline-gen, baseline-avg) do not require it.
 """
 from pathlib import Path
 from typing import Optional
 
-import matplotlib
-matplotlib.use("Agg")  # headless — must be set before importing pyplot
-import matplotlib.pyplot as plt
 import numpy as np
 
 from .config import WARN_DB, CRIT_DB
@@ -35,6 +35,10 @@ def plot_waveform(
     Returns:
         Path to the saved PNG.
     """
+    import matplotlib
+    matplotlib.use("Agg")  # headless — no-op if pyplot already loaded with Agg
+    import matplotlib.pyplot as plt
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -84,6 +88,10 @@ def plot_psd_comparison(
     Returns:
         Path to the saved PNG.
     """
+    import matplotlib
+    matplotlib.use("Agg")  # headless — no-op if pyplot already loaded with Agg
+    import matplotlib.pyplot as plt
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -26,13 +26,23 @@ export function registerBetaflightHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle("betaflight:connect", async (event, args: { portPath: string; baudRate?: number }) => {
+    // Phase 1 — open the port.
+    const candidate = new BetaflightController(event.sender);
     try {
-      controller = new BetaflightController(event.sender);
-      await controller.connect(args.portPath, args.baudRate ?? 115200);
-      const version = await controller.getFirmwareVersion();
+      await candidate.connect(args.portPath, args.baudRate ?? 115200);
+    } catch (err) {
+      // Port never opened; nothing to close.
+      return { connected: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    // Phase 2 — MSP handshake.  If this fails the port is already open, so we
+    // must close it before returning or the next attempt gets "Access denied".
+    try {
+      const version = await candidate.getFirmwareVersion();
+      controller = candidate;
       return { connected: true, firmwareVersion: version };
     } catch (err) {
-      controller = null;
+      await candidate.disconnect().catch(() => {});
       return { connected: false, error: err instanceof Error ? err.message : String(err) };
     }
   });

@@ -10,7 +10,7 @@
  *   - JSON result is printed to stdout on success
  *   - Errors are printed to stderr and process exits with code 1
  */
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, spawn, spawnSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
@@ -59,6 +59,9 @@ export class SidecarService {
   private readonly sidecarDir: string;
   private readonly appDataDir: string;
   private runningProcesses: Set<ChildProcess> = new Set();
+  // Cached after first successful dev-mode import check so we pay the
+  // ~1-2s Python startup cost once per app session, not once per call.
+  private devEnvVerified = false;
 
   constructor(sidecarDir: string, appDataDir: string) {
     this.sidecarDir = sidecarDir;
@@ -182,8 +185,13 @@ export class SidecarService {
    * In a packaged build, the analysis-sidecar directory contains a
    * PyInstaller-compiled exe: analysis-sidecar/analysis_sidecar.exe
    *
-   * In development, we fall back to calling `python -m analysis.api` from
-   * the repo root so the developer does not need a separate build step.
+   * In development, we require a repo-local virtual environment at .venv/.
+   * Using the venv interpreter instead of raw `python` ensures every developer
+   * machine uses the same isolated, dependency-complete environment regardless
+   * of what is (or isn't) installed globally.
+   *
+   * On first use the venv interpreter is validated by trying to import all
+   * required packages. The check result is cached for the rest of the session.
    */
   private resolveSidecarCommand(cliArgs: string[]): {
     executable: string;
@@ -191,25 +199,59 @@ export class SidecarService {
     cwd: string;
     env?: NodeJS.ProcessEnv;
   } {
-    // Packaged: check for compiled exe
+    // Packaged: check for compiled exe — no Python environment needed
     const exePath = path.join(this.sidecarDir, "analysis_sidecar.exe");
     if (fs.existsSync(exePath)) {
       return { executable: exePath, moduleArgs: cliArgs, cwd: this.sidecarDir };
     }
 
-    // Development fallback: python -m analysis.api from repo root
+    // Development: locate the repo-local venv interpreter
     const repoRoot = path.resolve(this.sidecarDir, "..");
-    const pythonPath = process.platform === "win32" ? "PYTHONPATH" : "PYTHONPATH";
-    const existingPythonPath = process.env[pythonPath];
+    const isWin = process.platform === "win32";
+    const venvPython = isWin
+      ? path.join(repoRoot, ".venv", "Scripts", "python.exe")
+      : path.join(repoRoot, ".venv", "bin", "python");
+
+    if (!fs.existsSync(venvPython)) {
+      const setupCmd = isWin
+        ? `python -m venv .venv && .venv\\Scripts\\python -m pip install -r analysis\\requirements.txt`
+        : `python3 -m venv .venv && .venv/bin/python -m pip install -r analysis/requirements.txt`;
+      throw new Error(
+        `Python sidecar environment not found.\n` +
+        `Expected interpreter: ${venvPython}\n\n` +
+        `Set it up from the repo root:\n  ${setupCmd}`,
+      );
+    }
+
+    // Verify required packages are importable — runs once per app session.
+    // Packages mirror analysis/requirements.txt.
+    if (!this.devEnvVerified) {
+      const packages = ["numpy", "scipy", "librosa", "matplotlib", "sounddevice", "soundfile"];
+      const checkScript = packages.map((p) => `import ${p}`).join("; ");
+      const result = spawnSync(venvPython, ["-c", checkScript], { encoding: "utf8" });
+      if (result.status !== 0) {
+        const installCmd = isWin
+          ? `.venv\\Scripts\\python -m pip install -r analysis\\requirements.txt`
+          : `.venv/bin/python -m pip install -r analysis/requirements.txt`;
+        throw new Error(
+          `Python sidecar dependencies are missing or broken.\n` +
+          `${(result.stderr ?? "").trim()}\n\n` +
+          `Install from the repo root:\n  ${installCmd}`,
+        );
+      }
+      this.devEnvVerified = true;
+    }
+
+    const existingPythonPath = process.env["PYTHONPATH"];
     const env = {
       ...process.env,
-      [pythonPath]: existingPythonPath
+      PYTHONPATH: existingPythonPath
         ? `${repoRoot}${path.delimiter}${existingPythonPath}`
         : repoRoot,
     };
 
     return {
-      executable: "python",
+      executable: venvPython,
       moduleArgs: ["-m", "analysis.api", ...cliArgs],
       cwd: repoRoot,
       env,
